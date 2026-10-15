@@ -93,6 +93,14 @@ static constexpr __host__ __device__ int get_vdr_mmvq(ggml_type type) {
     }
 }
 
+#ifndef MMVQ_MAXWELL_NWARPS_1
+#define MMVQ_MAXWELL_NWARPS_1 1
+#endif
+
+#ifndef MMVQ_MAXWELL_RPB_1
+#define MMVQ_MAXWELL_RPB_1 8
+#endif
+
 enum mmvq_parameter_table_id {
     MMVQ_PARAMETERS_GENERIC = 0,
     MMVQ_PARAMETERS_TURING,
@@ -100,7 +108,8 @@ enum mmvq_parameter_table_id {
     MMVQ_PARAMETERS_RDNA2,
     MMVQ_PARAMETERS_RDNA3_0,
     MMVQ_PARAMETERS_RDNA4,
-    MMVQ_PARAMETERS_GB10
+    MMVQ_PARAMETERS_GB10,
+    MMVQ_PARAMETERS_MAXWELL
 };
 
 static constexpr __device__ mmvq_parameter_table_id get_device_table_id() {
@@ -116,6 +125,8 @@ static constexpr __device__ mmvq_parameter_table_id get_device_table_id() {
     return MMVQ_PARAMETERS_TURING;
 #elif __CUDA_ARCH__ == GGML_CUDA_CC_DGX_SPARK
     return MMVQ_PARAMETERS_GB10;
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ < GGML_CUDA_CC_PASCAL
+    return MMVQ_PARAMETERS_MAXWELL;
 #else
     return MMVQ_PARAMETERS_GENERIC;
 #endif
@@ -139,6 +150,9 @@ static __host__ mmvq_parameter_table_id get_device_table_id(int cc) {
     }
     if (GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_DGX_SPARK) {
         return MMVQ_PARAMETERS_GB10;
+    }
+    if (GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) < GGML_CUDA_CC_PASCAL) {
+        return MMVQ_PARAMETERS_MAXWELL;
     }
     return MMVQ_PARAMETERS_GENERIC;
 }
@@ -573,11 +587,32 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
         }
         return generic;
     }
+    if (table_id == MMVQ_PARAMETERS_MAXWELL) {
+        if (ncols_dst == 1) {
+            switch (type) {
+                case GGML_TYPE_Q4_0:
+                case GGML_TYPE_Q4_1:
+                case GGML_TYPE_Q5_0:
+                case GGML_TYPE_Q5_1:
+                case GGML_TYPE_Q8_0:
+                case GGML_TYPE_Q4_K:
+                case GGML_TYPE_Q5_K:
+                case GGML_TYPE_Q6_K:
+                    return MMVQ_MAXWELL_NWARPS_1;
+                default:
+                    return 4;
+            }
+        }
+        return calc_nwarps(type, ncols_dst, MMVQ_PARAMETERS_GENERIC);
+    }
     return 1;
 }
 
 static constexpr __host__ __device__ int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1) {
-    if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10) {
+    if (table_id == MMVQ_PARAMETERS_MAXWELL && ncols_dst == 1 && !small_k) {
+        return MMVQ_MAXWELL_RPB_1;
+    }
+    if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10 || table_id == MMVQ_PARAMETERS_MAXWELL) {
         switch (ncols_dst) {
             case 1:
                 return small_k ? nwarps : 1;
