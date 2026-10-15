@@ -5,6 +5,9 @@
 
 #include <cstddef>
 
+// Maximum number of ranks the internal AllReduce pipeline supports.
+#define GGML_CUDA_AR_MAX_RANKS 4
+
 // Opaque pipeline context -- owns all pinned buffers, streams, and events.
 struct ggml_cuda_ar_pipeline;
 
