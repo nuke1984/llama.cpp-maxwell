@@ -94,7 +94,7 @@ static constexpr __host__ __device__ int get_vdr_mmvq(ggml_type type) {
 }
 
 #ifndef MMVQ_MAXWELL_NWARPS_1
-#define MMVQ_MAXWELL_NWARPS_1 1
+#define MMVQ_MAXWELL_NWARPS_1 2
 #endif
 
 #ifndef MMVQ_MAXWELL_RPB_1
